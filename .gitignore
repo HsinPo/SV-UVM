@@ -1,0 +1,7 @@
+work/
+transcript
+*.wlf
+*.log
+*.ucdb
+*.vcd
+*.fsdb
