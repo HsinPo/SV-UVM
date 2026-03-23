@@ -9,7 +9,8 @@ fi
 vlib work
 
 # 3. compile
-vlog *.sv
+vlog +incdir+../vip ../vip/*.sv
+vlog +incdir+../tb ../tb/tb_top.sv
 
 # 4. open GUI and load signal/wave
 # -do "..." 
