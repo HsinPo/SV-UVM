@@ -9,7 +9,7 @@ fi
 vlib work
 
 # 3. compile
-#vlog +incdir+../vip ../vip/*.sv // hasn't done yet
+vlog +incdir+../vip ../vip/*.sv
 vlog +incdir+../tb ../tb/tb_top.sv
 vlog ../rtl/*.v
 

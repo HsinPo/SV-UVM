@@ -4,40 +4,65 @@
 //               Responsible for clock/reset generation, DUT instantiation, 
 //               and UVM test execution.
 // ==============================================================================
-
-`timescale 1ns/1ps
-
-module top; // Note: This module name "top" must match the one in your run.sh
+module top; 
 
     // ==========================================
-    // 1. Global Signals Declaration (Clock & Reset)
+    // 1. Clock and Reset Generation
     // ==========================================
     logic hclk;
     logic hresetn;
 
-    // ==========================================
-    // 2. Clock Generation
-    // ==========================================
-    // Initialize to 0, toggle every 5ns -> Period = 10ns (100MHz)
+    // Generate a 100MHz clock (10ns period: toggles every 5ns)
     initial begin
         hclk = 1'b0;
         forever #5 hclk = ~hclk; 
     end
 
-    // ==========================================
-    // 3. Reset Generation
-    // ==========================================
-    // Active-low reset: Assert to 0 at start, release to 1 after 20ns
+    // Generate active-low reset (asserted for 20ns at startup)
     initial begin
         hresetn = 1'b0;
-        #20 hresetn = 1'b1;
+        #20 hresetn = 1'b1;      
     end
 
     // ==========================================
-    // (Undone Steps)
-    // 4. Instantiate AHB Interface
-    // 5. Instantiate DUT (ahb_sram)
-    // 6. UVM run_test() and config_db setup
+    // 2. Instantiate Physical Interface
     // ==========================================
+    // Create an instance of the ahb_if cable named "vif", 
+    // and connect the system clock and reset to it.
+    ahb_if vif(
+        .hclk   (hclk),
+        .hresetn(hresetn)
+    );
+
+    // ==========================================
+    // 3. Instantiate DUT (Design Under Test)
+    // ==========================================
+    // Instantiate the ahb_sram RTL module named "u_sram",
+    // and connect its ports to the wires inside the "vif" interface.
+    ahb_sram u_sram (
+        .hclk   (hclk),
+        .hresetn(hresetn),
+        .haddr  (vif.haddr),
+        .hwrite (vif.hwrite),
+        .htrans (vif.htrans),
+        .hsize  (vif.hsize),
+        .hburst (vif.hburst),
+        .hwdata (vif.hwdata),
+        .hrdata (vif.hrdata),
+        .hready (vif.hready),
+        .hresp  (vif.hresp)
+    );
+
+    // ==========================================
+    // 4. Simulation Control
+    // ==========================================
+    // Run the simulation for 100ns and then terminate gracefully.
+    initial begin
+        #100;
+        $display("=======================================");
+        $display("   Interface Connected Successfully!   ");
+        $display("=======================================");
+        $finish;
+    end
 
 endmodule
