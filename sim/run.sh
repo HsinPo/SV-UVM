@@ -17,4 +17,4 @@ vlog ../rtl/*.v
 # -do "..." 
 # add wave -r /*
 # run -all
-vsim -voptargs=+acc -do "add wave -r /*; run -all; wave zoom full" top
+vsim -voptargs=+acc -do "add wave -r /*; run -all; wave zoom full" tb_top
