@@ -1,11 +1,12 @@
 // ==============================================================================
 // File        : tb/tb_top.sv
-// Description : Top-level testbench for AHB SRAM.
-//               Includes IP bring-up (Sanity Check) with manual AHB transactions
-//               and architectural TODOs for future UVM migration.
+// Description : Top-level testbench for AHB SRAM (Object-Oriented Version).
+//               This file handles hardware connections and instantiates the 
+//               driver class to perform transactions.
 // ==============================================================================
 
 `timescale 1ns/1ps
+`include "../vip/ahb_driver.sv"
 
 module tb_top; 
 
@@ -30,6 +31,7 @@ module tb_top;
     // ==========================================
     // 2. Instantiate Physical Interface
     // ==========================================
+    // This is the physical wire bundle
     ahb_if vif(
         .hclk   (hclk),
         .hresetn(hresetn)
@@ -53,66 +55,59 @@ module tb_top;
     );
 
     // ==========================================================================
-    // 4. IP Bring-up: Manual Stimulus for Initial Connectivity Test
+    // 4. OOP Verification Logic
     // ==========================================================================
-    // TODO: This block is for initial bring-up only. 
-    // In a professional UVM environment:
-    //   - The DATA values (DEADBEEF) will move to a 'uvm_sequence'.
-    //   - The PIN-WIGGLING (timing) will move to a 'uvm_driver'.
-    //   - This 'initial' block will be REMOVED from the hardware top.
-    // ==========================================================================
+    
+    // Declare the Driver object and a variable for readback data
+    ahb_driver   driver;
+    logic [31:0] read_data;
+
     initial begin
-        // --- [Initial Reset State] ---
+        // [Step 0] Initialize physical signals to safe states (Avoid X-propagation)
         vif.haddr  = 32'h0;
         vif.hwrite = 1'b0;
-        vif.htrans = 2'b00; 
+        vif.htrans = 2'b00; // IDLE
         vif.hsize  = 3'b010;
         vif.hburst = 3'b000;
         vif.hwdata = 32'h0;
 
+        // [Step 1] Instantiate the Driver and pass the virtual interface pointer
+        // This connects the software 'driver' to the hardware 'vif'
+        driver = new(vif);
+
+        // [Step 2] Wait for system to be ready
         wait(hresetn == 1'b1);
         @(posedge hclk);
 
         $display("-----------------------------------------");
-        $display("[%0t] Starting IP Bring-up...", $time);
+        $display("[%0t] Starting OOP-based Test Scenario...", $time);
         
-        // --- [WRITE PHASE] ---
-        // [TODO]: Move these assignments to uvm_driver's run_phase()
-        vif.haddr  = 32'h0000_0004; 
-        vif.hwrite = 1'b1;          
-        vif.htrans = 2'b10;         
+        // [Step 3] Execute Transactions using Driver Tasks
+        // No more manual signal toggling here!
         
-        @(posedge hclk); 
+        // Write DEADBEEF to Address 0x4
+        driver.write(32'h0000_0004, 32'hDEADBEEF);
         
-        // [TODO]: Data phase logic should be handled by the driver's pipeline logic
-        vif.htrans = 2'b00;         
-        vif.hwdata = 32'hDEADBEEF;  // [YODO]: Data value should come from a uvm_sequence_item
+        // Write CAFEBABE to Address 0x8
+        driver.write(32'h0000_0008, 32'hCAFEBABE);
         
-        @(posedge hclk);            
-        vif.hwdata = 32'h0;         
-
-        // --- [READ PHASE] ---
-        vif.haddr  = 32'h0000_0004; 
-        vif.hwrite = 1'b0;          
-        vif.htrans = 2'b10;         
+        // Read back from Address 0x4 to verify
+        driver.read(32'h0000_0004, read_data);
         
-        @(posedge hclk);            
-        vif.htrans = 2'b00;         
-        @(posedge hclk);            
-        
-        // --- [SELF-CHECKING] ---
-        // [TODO]: This comparison logic will move to a 'uvm_scoreboard'
-        if (vif.hrdata == 32'hDEADBEEF) begin
+        // [Step 4] Self-Checking (Scoreboard Logic)
+        if (read_data == 32'hDEADBEEF) begin
             $display("=======================================");
-            $display("   [SUCCESS] Sanity PASS               ");
+            $display("   [SUCCESS] Data Match: 0x%08X", read_data);
             $display("=======================================");
         end else begin
             $display("=======================================");
-            $display("   [FAIL] Sanity FAILED                ");
+            $display("   [FAIL] Data Mismatch!");
+            $display("   Expected: 0xDEADBEEF, Got: 0x%08X", read_data);
             $display("=======================================");
         end
 
-        #50;
+        #100;
+        $display("[%0t] Test Finished.", $time);
         $finish;
     end
 

@@ -8,13 +8,8 @@ fi
 # 2. establish
 vlib work
 
-# 3. compile
-vlog +incdir+../vip ../vip/*.sv
-vlog +incdir+../tb ../tb/tb_top.sv
-vlog ../rtl/*.v
+# 3. compile (Interface -> RTL -> Top Testbench)
+vlog +incdir+../vip +incdir+../tb ../vip/ahb_if.sv ../rtl/*.v ../tb/tb_top.sv
 
-# 4. open GUI and load signal/wave
-# -do "..." 
-# add wave -r /*
-# run -all
+# 4. simulate
 vsim -voptargs=+acc -do "add wave -r /*; run -all; wave zoom full" tb_top
