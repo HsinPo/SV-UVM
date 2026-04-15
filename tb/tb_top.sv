@@ -1,18 +1,26 @@
 // ==============================================================================
 // File        : tb/tb_top.sv
-// Description : Top-level testbench for AHB SRAM (Object-Oriented Version).
-//               This file handles hardware connections and instantiates the 
-//               driver class to perform transactions.
+// Description : Top-level testbench for AHB SRAM (Transaction-Level Phase 1).
+//               This version manually creates ahb_transaction items and 
+//               passes them directly to the ahb_driver.
 // ==============================================================================
 
 `timescale 1ns/1ps
-`include "../vip/ahb_driver.sv"
+
+// ==============================================================================
+// 1. OOP Blueprint Includes (Order is STRICTLY IMPORTANT!)
+// ==============================================================================
+// Step 1: Include the data item first (Driver needs to know it)
+`include "../vip/ahb_transaction.sv" 
+
+// Step 2: Include the Driver
+`include "../vip/ahb_driver.sv" 
 
 module tb_top; 
 
-    // ==========================================
-    // 1. Clock and Reset Generation
-    // ==========================================
+    // ==========================================================================
+    // 2. Hardware Signal Generation (Clock & Reset)
+    // ==========================================================================
     logic hclk;
     logic hresetn;
 
@@ -28,18 +36,16 @@ module tb_top;
         #20 hresetn = 1'b1;      
     end
 
-    // ==========================================
-    // 2. Instantiate Physical Interface
-    // ==========================================
-    // This is the physical wire bundle
+    // ==========================================================================
+    // 3. Instantiate Physical Interfaces & DUT
+    // ==========================================================================
+    // Physical wire bundle
     ahb_if vif(
         .hclk   (hclk),
         .hresetn(hresetn)
     );
 
-    // ==========================================
-    // 3. Instantiate DUT (Design Under Test)
-    // ==========================================
+    // Design Under Test (AHB SRAM)
     ahb_sram u_sram (
         .hclk   (hclk),
         .hresetn(hresetn),
@@ -55,12 +61,12 @@ module tb_top;
     );
 
     // ==========================================================================
-    // 4. OOP Verification Logic
+    // 4. OOP Verification Execution
     // ==========================================================================
     
-    // Declare the Driver object and a variable for readback data
-    ahb_driver   driver;
-    logic [31:0] read_data;
+    // Declare the Driver and a Transaction handle
+    ahb_driver      driver;
+    ahb_transaction tr;
 
     initial begin
         // [Step 0] Initialize physical signals to safe states (Avoid X-propagation)
@@ -71,43 +77,49 @@ module tb_top;
         vif.hburst = 3'b000;
         vif.hwdata = 32'h0;
 
-        // [Step 1] Instantiate the Driver and pass the virtual interface pointer
-        // This connects the software 'driver' to the hardware 'vif'
+        // [Step 1] Instantiate the Driver and assign the virtual interface
         driver = new(vif);
 
-        // [Step 2] Wait for system to be ready
+        // [Step 2] Wait for hardware reset to complete
         wait(hresetn == 1'b1);
         @(posedge hclk);
 
-        $display("-----------------------------------------");
-        $display("[%0t] Starting OOP-based Test Scenario...", $time);
+        $display("=======================================================");
+        $display("[%0t] [TB_TOP] Starting OOP Transaction Test...", $time);
+        $display("=======================================================");
         
-        // [Step 3] Execute Transactions using Driver Tasks
-        // No more manual signal toggling here!
+        // ---------------------------------------------------------
+        // Test Scenario 1: Write DEADBEEF to 0x04
+        // ---------------------------------------------------------
+        tr = new();                  // Create an empty transaction box
+        tr.addr     = 32'h0000_0004; // Fill in the address
+        tr.data     = 32'hDEADBEEF;  // Fill in the data
+        tr.is_write = 1'b1;          // Set operation to WRITE
         
-        // Write DEADBEEF to Address 0x4
-        driver.write(32'h0000_0004, 32'hDEADBEEF);
+        driver.drive_item(tr);       // Hand the box to the driver
+
+        // ---------------------------------------------------------
+        // Test Scenario 2: Read back from 0x04
+        // ---------------------------------------------------------
+        tr = new();                  // Create a NEW empty transaction box
+        tr.addr     = 32'h0000_0004;
+        tr.is_write = 1'b0;          // Set operation to READ
         
-        // Write CAFEBABE to Address 0x8
-        driver.write(32'h0000_0008, 32'hCAFEBABE);
-        
-        // Read back from Address 0x4 to verify
-        driver.read(32'h0000_0004, read_data);
-        
-        // [Step 4] Self-Checking (Scoreboard Logic)
-        if (read_data == 32'hDEADBEEF) begin
-            $display("=======================================");
-            $display("   [SUCCESS] Data Match: 0x%08X", read_data);
-            $display("=======================================");
+        driver.drive_item(tr);       // Driver will sample bus and put data back into tr.data
+
+        // ---------------------------------------------------------
+        // Result Checking
+        // ---------------------------------------------------------
+        if (tr.data == 32'hDEADBEEF) begin
+            $display("   [SUCCESS] Data Match: 0x%08X", tr.data);
         end else begin
-            $display("=======================================");
-            $display("   [FAIL] Data Mismatch!");
-            $display("   Expected: 0xDEADBEEF, Got: 0x%08X", read_data);
-            $display("=======================================");
+            $display("   [FAIL] Data Mismatch! Expected: 0xDEADBEEF, Got: 0x%08X", tr.data);
         end
 
         #100;
-        $display("[%0t] Test Finished.", $time);
+        $display("=======================================================");
+        $display("[%0t] [TB_TOP] Test completed. Shutting down.", $time);
+        $display("=======================================================");
         $finish;
     end
 

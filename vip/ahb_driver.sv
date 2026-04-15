@@ -1,58 +1,49 @@
 // ==============================================================================
 // File        : vip/ahb_driver.sv
-// Description : AHB Master Driver (Object-Oriented)
+// Description : AHB Master Driver (TLM Upgraded)
+//               Drives ahb_transaction items onto the physical AHB interface.
 // ==============================================================================
 
 class ahb_driver;
-    // 1. Declare a virtual interface (the remote control to physical hardware)
+    // Virtual interface: The remote control to the physical hardware
     virtual ahb_if vif;
 
-    // 2. Constructor: Connect the physical interface to the virtual interface upon object creation
+    // Constructor: Assigns the physical interface to the virtual pointer
     function new(virtual ahb_if vif);
         this.vif = vif;
     endfunction
 
     // ---------------------------------------------------------
-    // Tool A: Write Task
+    // Upgraded Task: Process a single Transaction item directly
     // ---------------------------------------------------------
-    task write(input logic [31:0] addr, input logic [31:0] data);
-        $display("[%0t] Driver: Preparing to write Data 0x%08X to Address 0x%08X", $time, data, addr);
-        
-        // 1. Address Phase
-        @(posedge vif.hclk);
-        vif.haddr  <= addr;
-        vif.hwrite <= 1'b1;
-        vif.htrans <= 2'b10; // NONSEQ
-        
-        // 2. Data Phase
-        @(posedge vif.hclk);
-        vif.htrans <= 2'b00; // IDLE
-        vif.hwdata <= data;
-        
-        // 3. Cleanup: Clear the data bus after writing
-        @(posedge vif.hclk);
-        vif.hwdata <= 32'h0;
-    endtask
+    task drive_item(ahb_transaction tr);
+        $display("[%0t] Driver: Received new transaction item...", $time);
+        tr.display("Driver_Drive");
 
-    // ---------------------------------------------------------
-    // Tool B: Read Task
-    // ---------------------------------------------------------
-    task read(input logic [31:0] addr, output logic [31:0] rdata);
-        $display("[%0t] Driver: Preparing to read from Address 0x%08X", $time, addr);
-        
         // 1. Address Phase
         @(posedge vif.hclk);
-        vif.haddr  <= addr;
-        vif.hwrite <= 1'b0;
+        vif.haddr  <= tr.addr;
+        vif.hwrite <= tr.is_write;
         vif.htrans <= 2'b10; // NONSEQ
         
         // 2. Data Phase
         @(posedge vif.hclk);
         vif.htrans <= 2'b00; // IDLE
         
-        // 3. Sample Data
+        if (tr.is_write) begin
+            vif.hwdata <= tr.data; // Drive data onto the bus for write operations
+        end 
+        
+        // 3. Cleanup & Read Sampling Phase
         @(posedge vif.hclk);
-        rdata = vif.hrdata;  // Note: Using '=' here because we are reading hardware values into a software variable
+        
+        if (!tr.is_write) begin
+            // If it's a read operation, sample the bus and store it back into the packet
+            tr.data = vif.hrdata; 
+        end
+        
+        // Clear the write data bus to avoid X-propagation or trailing values
+        vif.hwdata <= 32'h0;
     endtask
 
 endclass
