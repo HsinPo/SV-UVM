@@ -13,6 +13,7 @@
 `include "../vip/ahb_transaction.sv" 
 `include "../vip/ahb_generator.sv" 
 `include "../vip/ahb_driver.sv" 
+`include "../vip/ahb_monitor.sv" 
 
 module tb_top; 
     
@@ -49,10 +50,13 @@ module tb_top;
     // 2. OOP Verification Infrastructure
     // ==========================================================================
     
-    // Declare the parameterized mailbox and OOP components
-    mailbox #(ahb_transaction) mbx;    
+    // Declare mailboxes
+    mailbox #(ahb_transaction) mbx;     
+    mailbox #(ahb_transaction) mon_mbx;
+    // Declare OOP components
     ahb_generator              gen;    
     ahb_driver                 driver; 
+    ahb_monitor                mon;
 
     initial begin
         // Initialize physical signals to safe states (Avoid X-propagation)
@@ -63,10 +67,12 @@ module tb_top;
 
         // [Step 1] Instantiate the mailbox first
         mbx = new();
+        mon_mbx = new();
 
         // [Step 2] Instantiate components and assign the shared mailbox
         gen    = new(mbx);
         driver = new(vif, mbx);
+        mon    = new(vif, mon_mbx);
 
         // [Step 3] Wait for hardware reset to complete before starting the test
         wait(hresetn == 1'b1);
@@ -82,6 +88,7 @@ module tb_top;
         fork
             gen.run(15);  // Task 1: Generator produces 15 random packets
             driver.run(); // Task 2: Driver infinite loop to consume packets
+            mon.run();    // Task 3: Monitor sample
         join_any          
 
         // [Step 5] Drain Time & Shutdown

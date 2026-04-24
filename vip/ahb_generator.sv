@@ -23,9 +23,13 @@ class ahb_generator;
             tr = new(); 
             
             // 2. Randomize the transaction constraints
-            if (!tr.randomize()) begin
+            // Duo to license, can't use randomize
+            /* if (!tr.randomize()) begin 
                 $fatal("[%0t] [Generator] FATAL: Randomization failed!", $time);
-            end
+            end*/
+            tr.addr     = $urandom();
+            tr.data     = $urandom();
+            tr.is_write = $urandom_range(0, 1);
             
             // 3. Put the randomized transaction into the mailbox
             mbx.put(tr); 
