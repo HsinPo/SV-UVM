@@ -1,26 +1,20 @@
 // ==============================================================================
 // File        : tb/tb_top.sv
-// Description : Top-level testbench for AHB SRAM. Instantiates physical 
-//               interfaces, DUT, and the OOP verification environment.
-//               Executes Generator and Driver concurrently using fork-join_any.
+// Description : Top-level testbench. Instantiates the DUT, connects the physical
+//               interface, and kicks off the OOP-based verification environment.
 // ==============================================================================
 
 `timescale 1ns/1ps
 
-// ==============================================================================
-// 1. OOP Blueprint Includes (Compilation order matters!)
-// ==============================================================================
-`include "../vip/ahb_transaction.sv" 
-`include "../vip/ahb_generator.sv" 
-`include "../vip/ahb_driver.sv" 
-`include "../vip/ahb_monitor.sv"
-`include "../vip/ahb_scoreboard.sv"
-
+// Include the VIP package exactly once
+`include "../vip/ahb_pkg.sv"
 
 module tb_top; 
+    // Import all classes from the package namespace
+    import ahb_pkg::*;
     
     // ==========================================================================
-    // Hardware Signal Declarations
+    // Hardware Signals and DUT Instantiation
     // ==========================================================================
     logic hclk;
     logic hresetn;
@@ -29,11 +23,10 @@ module tb_top;
     initial begin hclk = 1'b0; forever #5 hclk = ~hclk; end
     initial begin hresetn = 1'b0; #20 hresetn = 1'b1; end
 
-    // ==========================================================================
-    // Physical Interface & DUT Connection
-    // ==========================================================================
+    // Physical Interface instantiation
     ahb_if vif(.hclk(hclk), .hresetn(hresetn));
     
+    // Design Under Test (DUT) instantiation
     ahb_sram u_sram (
         .hclk(hclk), 
         .hresetn(hresetn), 
@@ -49,62 +42,46 @@ module tb_top;
     );
 
     // ==========================================================================
-    // 2. OOP Verification Infrastructure
+    // OOP Verification Environment Execution
     // ==========================================================================
     
-    // Declare mailboxes
-    mailbox #(ahb_transaction) mbx;     
-    mailbox #(ahb_transaction) mon_mbx;
-    // Declare OOP components
-    ahb_generator              gen;    
-    ahb_driver                 driver; 
-    ahb_monitor                mon;
-    ahb_scoreboard             scb;
+    // Single environment handle
+    ahb_env env; 
 
     initial begin
-        // Initialize physical signals to safe states (Avoid X-propagation)
+        // Initialize bus signals
         vif.haddr  = 32'h0; 
         vif.hwrite = 1'b0; 
         vif.htrans = 2'b00; 
         vif.hwdata = 32'h0;
 
-        // [Step 1] Instantiate the mailbox first
-        mbx = new();
-        mon_mbx = new();
+        // [Build Phase] Instantiate the environment and pass the virtual interface
+        env = new(vif); 
 
-        // [Step 2] Instantiate components and assign the shared mailbox
-        gen    = new(mbx);
-        driver = new(vif, mbx);
-        mon    = new(vif, mon_mbx);
-        scb    = new(mon_mbx);
-
-        // [Step 3] Wait for hardware reset to complete before starting the test
+        // Wait for hardware reset to complete before driving anything
         wait(hresetn == 1'b1);
         @(posedge hclk);
 
-        $display("=======================================================");
-        $display("[%0t] [TB_TOP] Automated AHB Environment Started!", $time);
-        $display("=======================================================");
-        
-        // [Step 4] Parallel Execution
-        // Start Generator and Driver concurrently. The block exits when 
-        // the Generator finishes producing the requested number of packets.
-        fork
-            gen.run(15);  // Task 1: Generator produces 15 random packets
-            driver.run(); // Task 2: Driver infinite loop to consume packets
-            mon.run();    // Task 3: Monitor sample
-            scb.run();    // Tash 4: Scoreboard check
-        join_any          
+        // [Run Phase] Kick off the entire verification environment
+        env.run();
 
-        // [Step 5] Drain Time & Shutdown
-        // Allow the driver enough time to process the final packet from the mailbox
-        #100; 
-        scb.report();
-        $display("=======================================================");
-        $display("[%0t] [TB_TOP] Simulation Finished Successfully!", $time);
-        $display("=======================================================");
+        // =========================================================
+        // Drain Time: Prevent simulation from exiting prematurely
+        // =========================================================
         
-        // Terminate the simulation
+        // 1. Wait until the Generator has pushed everything and the Driver has fetched it all
+        wait(env.mbx.num() == 0);
+
+        // 2. Add extra time for the Driver to finish driving the bus, 
+        //    the Monitor to sample, and the Scoreboard to compare the final transactions.
+        #500; 
+        
+        // =========================================================
+
+        // [Report Phase] Print final verification results
+        env.report();
+        
+        $display("[%0t] [TB_TOP] Simulation Finished.", $time);
         $finish;
     end
 endmodule

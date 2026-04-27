@@ -1,41 +1,84 @@
 // ==============================================================================
 // File        : vip/ahb_generator.sv
-// Description : Stimulus Generator. Generates randomized ahb_transaction items
-//               and sends them to the driver via a parameterized mailbox.
+// Description : Generator class. Responsible for creating transaction objects
+//               and sending them to the driver via mailbox. Includes both
+//               directed sanity checks and randomized tests.
 // ==============================================================================
 
 class ahb_generator;
-    // Parameterized mailbox to ensure type safety
-    mailbox #(ahb_transaction) mbx; 
+    // Mailbox to send transactions to the driver
+    mailbox #(ahb_transaction) mbx;
 
-    // Constructor: Receive the mailbox assigned by the top environment
+    // Constructor
     function new(mailbox #(ahb_transaction) mbx);
         this.mbx = mbx;
     endfunction
 
-    // Main task: Generate a specified number of transactions
+    // ---------------------------------------------------------
+    // Run Phase: Generate Directed and Random Transactions
+    // ---------------------------------------------------------
     task run(int count);
         ahb_transaction tr;
-        $display("[%0t] [Generator] Started! Preparing to generate %0d packets...", $time, count);
+        logic [31:0] rand_addr;
 
+        $display("\n[%0t] [GEN] Starting Generator...", $time);
+        
+        // =========================================================
+        // Part 1: Directed Tests (Sanity Checks)
+        // =========================================================
+        $display("[%0t] [GEN] --- Running Directed Tests ---", $time);
+        
+        // Test 1: Write to specific address 0x0000_0010
+        tr = new();
+        tr.addr     = 32'h0000_0010;
+        tr.data     = 32'hAAAA_BBBB;
+        tr.is_write = 1'b1; 
+        mbx.put(tr);
+
+        // Test 2: Read from specific address 0x0000_0010 (Expect PASS)
+        tr = new();
+        tr.addr     = 32'h0000_0010;
+        tr.is_write = 1'b0; 
+        mbx.put(tr);
+
+        // Test 3: Write to specific address 0x0000_0020
+        tr = new();
+        tr.addr     = 32'h0000_0020;
+        tr.data     = 32'h1234_5678;
+        tr.is_write = 1'b1; 
+        mbx.put(tr);
+
+        // Test 4: Read from specific address 0x0000_0020 (Expect PASS)
+        tr = new();
+        tr.addr     = 32'h0000_0020;
+        tr.is_write = 1'b0; 
+        mbx.put(tr);
+
+        // =========================================================
+        // Part 2: Random Tests
+        // =========================================================
+        $display("[%0t] [GEN] --- Running %0d Random Test Pairs ---", $time, count);
+        
+        // Generate Write/Read pairs to ensure the Scoreboard can verify data
         for (int i = 0; i < count; i++) begin
-            // 1. Create a new transaction item
-            tr = new(); 
-            
-            // 2. Randomize the transaction constraints
-            // Duo to license, can't use randomize
-            /* if (!tr.randomize()) begin 
-                $fatal("[%0t] [Generator] FATAL: Randomization failed!", $time);
-            end*/
-            tr.addr     = $urandom();
+            // Generate a random, word-aligned address (masking the lowest 2 bits)
+            // Using $urandom to avoid svverification license limitations
+            rand_addr = $urandom_range(32'h0000_0100, 32'h0000_0FFF) & 32'hFFFF_FFFC;
+
+            // Random Write Transaction
+            tr = new();
+            tr.addr     = rand_addr;
             tr.data     = $urandom();
-            tr.is_write = $urandom_range(0, 1);
-            
-            // 3. Put the randomized transaction into the mailbox
-            mbx.put(tr); 
-            $display("[%0t] [Generator] Packet %0d sent to mailbox (Addr: 0x%08X)", $time, i, tr.addr);
+            tr.is_write = 1'b1;
+            mbx.put(tr);
+
+            // Random Read Transaction (Same address to trigger Scoreboard check)
+            tr = new();
+            tr.addr     = rand_addr;
+            tr.is_write = 1'b0;
+            mbx.put(tr);
         end
         
-        $display("[%0t] [Generator] Successfully sent all %0d packets. Task finished.", $time, count);
+        $display("[%0t] [GEN] Generation Complete.", $time);
     endtask
 endclass
